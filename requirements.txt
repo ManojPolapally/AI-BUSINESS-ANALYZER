@@ -1,0 +1,35 @@
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Frontend
+streamlit>=1.35.0
+requests>=2.31.0
+
+# LangGraph + LangChain
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
+
+# Google Gemini
+google-generativeai>=0.8.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Database
+# SQLite is part of Python stdlib — no extra package needed
+
+# Charts
+plotly>=5.20.0
+kaleido>=0.2.1           # optional: PNG chart export (skip if install fails)
+
+# Validation
+pydantic>=2.5.0
+
+# File handling
+python-multipart>=0.0.9
+
+# Environment
+python-dotenv>=1.0.0
