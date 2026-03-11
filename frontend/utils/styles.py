@@ -9,24 +9,41 @@ import streamlit as st
 
 _CSS = """
 <style>
-    /* ── Base ───────────────────────────────────────────────────────────── */
+    /* ── Base & text readability ─────────────────────────────────────────── */
     .stApp {
-        background: linear-gradient(135deg, #f0f4ff 0%, #fafbff 60%, #f5f0ff 100%);
+        background: linear-gradient(135deg, #f0f4ff 0%, #fafbff 60%, #f5f0ff 100%) !important;
         min-height: 100vh;
+        color: #1e2a45 !important;
     }
-    .block-container { padding-top: 1.4rem; padding-bottom: 2.5rem; }
+    .block-container {
+        padding-top: 1.4rem;
+        padding-bottom: 2.5rem;
+        color: #1e2a45;
+    }
     hr { border-color: #dde3f0; }
+
+    /* Force visible text on all Streamlit markdown / text elements */
+    .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span,
+    [data-testid="stText"], label, .stSelectbox label,
+    .stCheckbox label, .streamlit-expanderHeader {
+        color: #1e2a45 !important;
+    }
 
     /* ── Sidebar ─────────────────────────────────────────────────────────── */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #ffffff 0%, #f8f9ff 100%);
+        background: linear-gradient(180deg, #ffffff 0%, #f8f9ff 100%) !important;
         border-right: 1px solid #e4e8f5;
     }
+    [data-testid="stSidebar"],
     [data-testid="stSidebar"] * { color: #1e2a45 !important; }
 
     /* ── Metric boxes ────────────────────────────────────────────────────── */
     [data-testid="metric-container"] {
-        background: #ffffff;
+        background: #ffffff !important;
         border: 1px solid #e0e7ff;
         border-radius: 12px;
         padding: 10px 14px;
@@ -37,24 +54,28 @@ _CSS = """
         box-shadow: 0 6px 18px rgba(99,102,241,0.15);
         transform: translateY(-2px);
     }
+    [data-testid="metric-container"] * { color: #1e2a45 !important; }
+    [data-testid="stMetricValue"] { color: #4f46e5 !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] { color: #6366f1 !important; font-size: 0.84rem !important; }
 
     /* ── Text input ──────────────────────────────────────────────────────── */
     .stTextInput > div > div > input {
         font-size: 1rem;
         border-radius: 12px;
         border: 1.5px solid #c7d2fe;
-        background: #ffffff;
+        background: #ffffff !important;
+        color: #1e2a45 !important;
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
     .stTextInput > div > div > input:focus {
         border-color: #6366f1;
         box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
-        background: #fefeff;
+        background: #fefeff !important;
     }
 
     /* ── Primary button ──────────────────────────────────────────────────── */
     div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
         border: none;
         border-radius: 12px;
         color: #ffffff !important;
@@ -78,14 +99,14 @@ _CSS = """
         border-radius: 20px;
         font-size: 0.85rem;
         text-align: left;
-        background: #ffffff;
+        background: #ffffff !important;
         border: 1.5px solid #c7d2fe;
         color: #4f46e5 !important;
         transition: background 0.2s ease, border-color 0.2s ease,
                     box-shadow 0.2s ease, transform 0.15s ease;
     }
     div[data-testid="stButton"] button:not([kind="primary"]):hover {
-        background: #eef2ff;
+        background: #eef2ff !important;
         border-color: #6366f1;
         box-shadow: 0 4px 12px rgba(99,102,241,0.18);
         transform: translateY(-1px);
@@ -97,9 +118,11 @@ _CSS = """
         padding: 6px 12px;
         transition: background 0.2s ease;
         cursor: pointer;
+        color: #1e2a45 !important;
     }
     details > summary:hover { background: #eef2ff; }
-    details[open] > summary { background: #e0e7ff; }
+    details[open] > summary { background: #e0e7ff; color: #4f46e5 !important; }
+    .streamlit-expanderContent { background: #ffffff !important; color: #1e2a45 !important; }
 
     /* ── Alert cards ─────────────────────────────────────────────────────── */
     [data-testid="stAlert"] {
@@ -107,6 +130,7 @@ _CSS = """
         transition: box-shadow 0.2s ease;
     }
     [data-testid="stAlert"]:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
+    [data-testid="stAlert"] p { color: inherit !important; }
 
     /* ── File uploader ───────────────────────────────────────────────────── */
     [data-testid="stFileUploaderDropzone"] {
@@ -119,6 +143,7 @@ _CSS = """
         border-color: #6366f1 !important;
         background: #eef2ff !important;
     }
+    [data-testid="stFileUploaderDropzone"] * { color: #6366f1 !important; }
 
     /* ── Plotly chart card ───────────────────────────────────────────────── */
     [data-testid="stPlotlyChart"] {
@@ -126,6 +151,7 @@ _CSS = """
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(99,102,241,0.10);
         transition: box-shadow 0.25s ease;
+        background: #ffffff;
     }
     [data-testid="stPlotlyChart"]:hover {
         box-shadow: 0 8px 32px rgba(99,102,241,0.18);
@@ -133,7 +159,7 @@ _CSS = """
 
     /* ── Download button ─────────────────────────────────────────────────── */
     [data-testid="stDownloadButton"] button {
-        background: #f0f4ff;
+        background: #f0f4ff !important;
         border: 1.5px solid #c7d2fe;
         border-radius: 10px;
         color: #4f46e5 !important;
@@ -141,7 +167,7 @@ _CSS = """
         transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
     }
     [data-testid="stDownloadButton"] button:hover {
-        background: #e0e7ff;
+        background: #e0e7ff !important;
         box-shadow: 0 4px 12px rgba(99,102,241,0.18);
         transform: translateY(-1px);
     }
@@ -152,16 +178,19 @@ _CSS = """
         overflow: hidden;
         border: 1px solid #e0e7ff;
         box-shadow: 0 2px 12px rgba(99,102,241,0.07);
+        background: #ffffff;
     }
 
     /* ── Tabs ────────────────────────────────────────────────────────────── */
     [data-testid="stTabs"] [data-testid="stTab"] {
         border-radius: 8px 8px 0 0;
         transition: background 0.2s ease;
+        color: #1e2a45 !important;
     }
-    [data-testid="stTabs"] [data-testid="stTab"]:hover {
-        background: #eef2ff;
-    }
+    [data-testid="stTabs"] [data-testid="stTab"]:hover { background: #eef2ff; }
+
+    /* ── Spinner text ────────────────────────────────────────────────────── */
+    [data-testid="stSpinner"] p { color: #6366f1 !important; }
 
     /* ── Scrollbar ───────────────────────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }

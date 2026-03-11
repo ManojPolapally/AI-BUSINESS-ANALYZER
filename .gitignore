@@ -24,6 +24,7 @@ data/*.sqlite
 
 # Streamlit
 .streamlit/
+!.streamlit/config.toml
 
 # OS
 .DS_Store

@@ -7,6 +7,7 @@ dataset — no prompts required.  All analysis is rule-based (no LLM call).
 
 import math
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -15,13 +16,6 @@ import streamlit as st
 from frontend.components.sidebar import render_sidebar
 from frontend.utils.api_client import APIError, get_data_stats, health_check
 from frontend.utils.styles import apply, no_dataset_placeholder, page_header, section_card
-
-st.set_page_config(
-    page_title="Auto Insights | AI BI Analyser",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 apply()
 
@@ -172,7 +166,7 @@ page_header(
 st.divider()
 
 # ── 1. KPI row ────────────────────────────────────────────────────────────────
-section_card("⚡ At a Glance", "#7c3aed", "#f5f3ff")
+section_card("⚡ At a Glance", "#6366f1", "#eef2ff")
 kpi_cols = st.columns(4)
 kpi_cols[0].metric("📦 Rows", f"{row_count:,}")
 kpi_cols[1].metric("📊 Columns", col_count)
@@ -188,21 +182,21 @@ ratio = f"{len(num_cols)} / {len(cat_cols)}"
 kpi_cols[3].metric("🔢 Num / Cat", ratio)
 
 # ── 2. Key observations ───────────────────────────────────────────────────────
-section_card("💡 Key Observations", "#f59e0b", "#fffbeb")
+section_card("💡 Key Observations", "#6366f1", "#eef2ff")
 observations = _auto_observations()
 for obs in observations:
     st.markdown(
         f"<div style='"
-        f"background:#fff; border-left:4px solid #f59e0b; border-radius:0 10px 10px 0;"
+        f"background:#ffffff; border-left:4px solid #6366f1; border-radius:0 10px 10px 0;"
         f"padding:10px 16px; margin:6px 0; font-size:0.95rem; color:#1e2a45;"
-        f"box-shadow:0 2px 8px rgba(245,158,11,0.10);'>"
+        f"box-shadow:0 2px 8px rgba(99,102,241,0.08);'>"
         f"{obs}</div>",
         unsafe_allow_html=True,
     )
 
 # ── 3. Top-value bar chart (main categorical × main numeric) ──────────────────
 if cat_cols and num_cols and val_counts:
-    section_card("🏆 Top Performers", "#10b981", "#ecfdf5")
+    section_card("🏆 Top Performers", "#8b5cf6", "#f5f3ff")
 
     main_cat = next(iter(val_counts))  # first categorical column
     vc       = val_counts[main_cat]
@@ -223,7 +217,7 @@ if cat_cols and num_cols and val_counts:
     )
     fig_top.update_traces(texttemplate="%{text:,}", textposition="outside")
     fig_top.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#ffffff",
         margin=dict(l=10, r=60, t=50, b=10),
         coloraxis_showscale=False,
         height=max(300, len(top_categories) * 38),
@@ -234,7 +228,7 @@ if cat_cols and num_cols and val_counts:
 
 # ── 4. Main numeric distribution ─────────────────────────────────────────────
 if dists:
-    section_card("📊 Distribution Spotlight", "#0ea5e9", "#e0f2fe")
+    section_card("📊 Distribution Spotlight", "#6366f1", "#eef2ff")
 
     # Pick the column with the highest std for most-interesting distribution
     main_num = (
@@ -258,19 +252,19 @@ if dists:
             fig_dist.add_vline(
                 x=d.get("mean", 0),
                 line_dash="dash",
-                line_color="#f59e0b",
+                line_color="#4f46e5",
                 annotation_text=f"Mean: {d.get('mean', 0):.2f}",
                 annotation_position="top right",
             )
             fig_dist.add_vline(
                 x=d.get("50%", d.get("mean", 0)),
                 line_dash="dot",
-                line_color="#10b981",
+                line_color="#818cf8",
                 annotation_text=f"Median: {d.get('50%', 0):.2f}",
                 annotation_position="top left",
             )
             fig_dist.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="#ffffff",
                 margin=dict(l=10, r=10, t=50, b=10),
                 showlegend=False,
                 height=320,
@@ -279,7 +273,7 @@ if dists:
             st.plotly_chart(fig_dist, use_container_width=True)
 
         with col_b:
-            st.markdown("**Quick Stats**")
+            st.markdown("<p style='font-weight:700; color:#4f46e5; margin-bottom:8px;'>Quick Stats</p>", unsafe_allow_html=True)
             stat_items = [
                 ("Min",     d.get("min", "—")),
                 ("Q1",      d.get("25%", "—")),
@@ -293,9 +287,9 @@ if dists:
                 v = f"{float(val):,.3f}" if isinstance(val, (int, float)) else val
                 st.markdown(
                     f"<div style='display:flex; justify-content:space-between; "
-                    f"padding:5px 0; border-bottom:1px solid #e0e7ff; font-size:0.9rem;'>"
-                    f"<span style='color:#6b7280;'>{label}</span>"
-                    f"<span style='font-weight:600; color:#1e2a45;'>{v}</span>"
+                    f"padding:6px 0; border-bottom:1px solid #e0e7ff; font-size:0.9rem;'>"
+                    f"<span style='color:#6366f1; font-weight:500;'>{label}</span>"
+                    f"<span style='font-weight:700; color:#1e2a45;'>{v}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
@@ -325,9 +319,7 @@ if len(num_cols) >= 2 and corr and dists:
             scatter_df,
             x=best_pair[0],
             y=best_pair[1],
-            trendline="ols",
-            trendline_color_override="#f59e0b",
-            color_discrete_sequence=["#6366f1"],
+            color_discrete_sequence=["#818cf8"],
             template="plotly_white",
             title=(
                 f"'{best_pair[0].replace('_',' ').title()}' vs "
@@ -335,8 +327,22 @@ if len(num_cols) >= 2 and corr and dists:
             ),
             opacity=0.65,
         )
+        # Add numpy-based trendline (no statsmodels needed)
+        x_vals = scatter_df[best_pair[0]].dropna().to_numpy()
+        y_vals = scatter_df[best_pair[1]].dropna().to_numpy()
+        _n = min(len(x_vals), len(y_vals))
+        if _n > 1:
+            m, b = np.polyfit(x_vals[:_n], y_vals[:_n], 1)
+            x_line = np.linspace(x_vals[:_n].min(), x_vals[:_n].max(), 200)
+            fig_scatter.add_scatter(
+                x=x_line, y=m * x_line + b,
+                mode="lines",
+                line=dict(color="#4f46e5", width=2),
+                name="Trend",
+                showlegend=False,
+            )
         fig_scatter.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="#ffffff",
             margin=dict(l=10, r=10, t=50, b=10),
             height=360,
         )
@@ -346,7 +352,7 @@ if len(num_cols) >= 2 and corr and dists:
 
 # ── 6. Categorical breakdown pie ──────────────────────────────────────────────
 if val_counts:
-    section_card("🥧 Category Share", "#ec4899", "#fdf2f8")
+    section_card("🦴 Category Share", "#8b5cf6", "#f5f3ff")
 
     main_cat = next(iter(val_counts))
     vc       = val_counts[main_cat]
@@ -358,7 +364,7 @@ if val_counts:
     fig_pie = px.pie(
         names=list(top10.keys()),
         values=list(top10.values()),
-        color_discrete_sequence=px.colors.qualitative.Vivid,
+        color_discrete_sequence=["#6366f1","#8b5cf6","#a78bfa","#818cf8","#4f46e5","#7c3aed","#c4b5fd","#ddd6fe","#ede9fe","#e0e7ff"],
         template="plotly_white",
         title=f"Category distribution: {main_cat.replace('_', ' ').title()}",
         hole=0.4,
@@ -369,7 +375,7 @@ if val_counts:
         hovertemplate="%{label}: %{value:,} (%{percent})<extra></extra>",
     )
     fig_pie.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#ffffff",
         margin=dict(l=10, r=10, t=50, b=10),
         height=400,
         legend=dict(orientation="v", x=1.05),
@@ -378,11 +384,13 @@ if val_counts:
 
 # ── 7. Box-plot overview (numeric columns) ────────────────────────────────────
 if dists and len(num_cols) > 1:
-    section_card("📦 Spread & Outliers (Box Plots)", "#f59e0b", "#fffbeb")
+    section_card("📦 Spread & Outliers (Box Plots)", "#6366f1", "#eef2ff")
 
     cols_to_plot = list(dists.keys())[:6]
     fig_box = go.Figure()
-    palette  = ["#6366f1", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"]
+    palette  = ["#6366f1", "#8b5cf6", "#a78bfa", "#818cf8", "#4f46e5", "#7c3aed"]
+    palette_fill = ["rgba(99,102,241,0.19)", "rgba(139,92,246,0.19)", "rgba(167,139,250,0.19)",
+                    "rgba(129,140,248,0.19)", "rgba(79,70,229,0.19)", "rgba(124,58,237,0.19)"]
     for idx, col in enumerate(cols_to_plot):
         fig_box.add_trace(
             go.Box(
@@ -391,11 +399,11 @@ if dists and len(num_cols) > 1:
                 boxpoints="outliers",
                 marker_color=palette[idx % len(palette)],
                 line_color=palette[idx % len(palette)],
-                fillcolor=palette[idx % len(palette)] + "30",
+                fillcolor=palette_fill[idx % len(palette_fill)],
             )
         )
     fig_box.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#ffffff",
         plot_bgcolor="#fafbfc",
         template="plotly_white",
         height=380,
@@ -409,7 +417,7 @@ if dists and len(num_cols) > 1:
 # ── Footer note ───────────────────────────────────────────────────────────────
 st.divider()
 st.markdown(
-    "<p style='text-align:center; color:#94a3b8; font-size:0.82rem;'>"
+    "<p style='text-align:center; color:#818cf8; font-size:0.82rem;'>"
     "🤖 All insights above are generated automatically using statistical analysis "
     "— no LLM / external API call required for this page."
     "</p>",
