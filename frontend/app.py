@@ -23,9 +23,9 @@ import streamlit as st
 from frontend.components.chat_interface import render_prompt_input
 from frontend.components.dashboard_view import render_all_charts
 from frontend.components.followup_panel import render_followup_suggestions
-from frontend.components.insight_panel import render_right_panel
 from frontend.components.sidebar import render_sidebar
 from frontend.utils.api_client import health_check
+from frontend.utils.styles import apply as _apply_styles, page_header
 
 # ---------------------------------------------------------------------------
 # Page config — MUST be the very first Streamlit call
@@ -38,44 +38,9 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Global CSS
+# Global CSS (shared across all pages)
 # ---------------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-        .stApp { background-color: #f7f9fc; }
-        .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
-        hr { border-color: #e0e0e0; }
-
-        /* Metric boxes */
-        [data-testid="metric-container"] {
-            background: #ffffff;
-            border: 1px solid #e8ecf0;
-            border-radius: 8px;
-            padding: 8px;
-        }
-
-        /* Prompt input row */
-        .stTextInput > div > div > input {
-            font-size: 1rem;
-            border-radius: 8px;
-            border: 1.5px solid #cbd5e1;
-        }
-        .stTextInput > div > div > input:focus {
-            border-color: #1f77b4;
-            box-shadow: 0 0 0 2px rgba(31,119,180,0.15);
-        }
-
-        /* Follow-up buttons */
-        div[data-testid="stButton"] button {
-            border-radius: 20px;
-            font-size: 0.85rem;
-            text-align: left;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+_apply_styles()
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -97,17 +62,13 @@ if not health_check():
 # ---------------------------------------------------------------------------
 # Page header
 # ---------------------------------------------------------------------------
-st.markdown(
-    """
-    <h1 style='margin-bottom:2px; color:#1f2937;'>
-        📊 Conversational Business Intelligence
-    </h1>
-    <p style='color:#6b7280; font-size:0.95rem; margin-top:0;'>
-        Upload a CSV dataset and ask questions in plain English to generate
-        interactive dashboards, AI insights, and business recommendations.
-    </p>
-    """,
-    unsafe_allow_html=True,
+page_header(
+    "📊",
+    "Conversational Business Intelligence",
+    "Upload a CSV dataset and ask questions in plain English to generate "
+    "interactive dashboards, AI insights, and business recommendations.",
+    "#6366f1",
+    "#7c3aed",
 )
 st.divider()
 
@@ -117,7 +78,7 @@ st.divider()
 render_prompt_input()
 
 # ---------------------------------------------------------------------------
-# MAIN SECTION — Chart (left) + Insights panel (right)
+# MAIN SECTION — Charts with inline insights
 # ---------------------------------------------------------------------------
 has_results = any(
     e["response"].get("status") == "success"
@@ -126,25 +87,25 @@ has_results = any(
 
 if has_results:
     st.divider()
-    chart_col, insight_col = st.columns([3, 2], gap="large")
-
-    with chart_col:
-        st.markdown("### 📈 Interactive Dashboard")
-        render_all_charts()
-
-    with insight_col:
-        st.markdown("### 🧠 AI Analysis")
-        render_right_panel()
+    st.markdown("### 📈 Interactive Dashboard")
+    render_all_charts()
 
 elif st.session_state.get("dataset_loaded"):
     st.markdown(
         """
         <div style="
-            text-align:center; padding:60px 20px;
-            color:#9ca3af; font-size:1.05rem;
+            text-align:center; padding:70px 20px;
+            background: linear-gradient(135deg, #eef2ff, #f5f3ff);
+            border-radius: 16px; margin-top: 20px;
+            border: 1.5px dashed #c7d2fe;
         ">
-            <span style='font-size:3rem;'>💬</span><br/>
-            Type a question above to generate your first dashboard.
+            <span style='font-size:3.5rem;'>💬</span>
+            <p style='color:#6366f1; font-size:1.1rem; font-weight:600; margin:12px 0 4px;'>
+                Ready to analyse!
+            </p>
+            <p style='color:#818cf8; font-size:0.95rem; margin:0;'>
+                Type a question above to generate your first dashboard.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -153,11 +114,18 @@ else:
     st.markdown(
         """
         <div style="
-            text-align:center; padding:60px 20px;
-            color:#9ca3af; font-size:1.05rem;
+            text-align:center; padding:70px 20px;
+            background: linear-gradient(135deg, #f8f9ff, #f0f4ff);
+            border-radius: 16px; margin-top: 20px;
+            border: 1.5px dashed #c7d2fe;
         ">
-            <span style='font-size:3rem;'>📂</span><br/>
-            Upload a CSV file from the sidebar to get started.
+            <span style='font-size:3.5rem;'>📂</span>
+            <p style='color:#6366f1; font-size:1.1rem; font-weight:600; margin:12px 0 4px;'>
+                Get started
+            </p>
+            <p style='color:#818cf8; font-size:0.95rem; margin:0;'>
+                Upload a CSV file from the sidebar to begin.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,

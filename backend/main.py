@@ -15,14 +15,16 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.config import MAX_CSV_SIZE_BYTES
+from backend.config import MAX_CSV_SIZE_BYTES, GEMINI_API_KEY as _ENV_GEMINI_KEY
 from backend.csv_loader import CSVUploadError, load_csv_to_db
 from backend.database import get_active_schema, init_db
-from backend.langgraph_pipeline import run_pipeline
+from backend.pipeline import run_pipeline
+from backend.query_executor import run_query
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,7 +194,10 @@ def _run_dashboard_query(question: str) -> DashboardResponse:
         )
 
     try:
-        final_state = run_pipeline(question)
+        final_state = run_pipeline(
+            question,
+            api_key=_ENV_GEMINI_KEY,
+        )
     except Exception as exc:
         logger.exception("Unexpected pipeline error for question: %s", question)
         raise HTTPException(
@@ -202,9 +207,9 @@ def _run_dashboard_query(question: str) -> DashboardResponse:
 
     pipeline_status = final_state.get("status", "error")
 
-    if pipeline_status in ("error", "unsupported"):
+    if pipeline_status in ("error", "unsupported", "quota_exceeded"):
         return DashboardResponse(
-            status="error",
+            status=pipeline_status,
             question=question,
             error=final_state.get("error", "An unknown error occurred."),
         )
@@ -286,3 +291,79 @@ def get_schema() -> SchemaResponse:
         table_name="dataset",
         columns=schema,
     )
+
+
+@app.get(
+    "/data-stats",
+    tags=["Data"],
+    summary="Get comprehensive statistics for the active dataset",
+)
+def get_data_stats() -> dict[str, Any]:
+    """
+    Return column stats, correlation matrix, value counts, distributions,
+    and a data preview for the currently active dataset.
+    """
+    schema = get_active_schema()
+    if schema is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No dataset has been uploaded yet.",
+        )
+    try:
+        rows = run_query("SELECT * FROM dataset LIMIT 2000")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset is empty.",
+        )
+
+    df = pd.DataFrame(rows)
+    num_cols = df.select_dtypes(include="number").columns.tolist()
+    cat_cols = [c for c in df.columns if c not in num_cols]
+
+    # Descriptive stats
+    desc: dict[str, Any] = {}
+    if num_cols:
+        for col in num_cols:
+            s = df[col].describe()
+            desc[col] = {k: round(float(v), 4) for k, v in s.items()}
+
+    # Correlation matrix (numeric cols only)
+    corr: dict[str, Any] = {}
+    if len(num_cols) >= 2:
+        cm = df[num_cols].corr().round(3)
+        corr = {c: {r: float(cm.at[r, c]) for r in cm.index} for c in cm.columns}
+
+    # Value counts for top categorical columns
+    value_counts: dict[str, Any] = {}
+    for col in cat_cols[:6]:
+        vc = df[col].value_counts().head(15)
+        value_counts[col] = {str(k): int(v) for k, v in vc.items()}
+
+    # Distribution data for histograms (first 8 numeric cols, capped at 1000 pts)
+    distributions: dict[str, Any] = {}
+    for col in num_cols[:8]:
+        distributions[col] = df[col].dropna().round(4).tolist()[:1000]
+
+    # Null counts per column
+    null_counts = {c: int(df[c].isna().sum()) for c in df.columns}
+
+    return {
+        "status": "success",
+        "row_count": len(df),
+        "col_count": len(df.columns),
+        "numeric_columns": num_cols,
+        "categorical_columns": cat_cols,
+        "descriptive_stats": desc,
+        "correlation_matrix": corr,
+        "value_counts": value_counts,
+        "distributions": distributions,
+        "null_counts": null_counts,
+        "sample_data": df.head(20).fillna("").to_dict(orient="records"),
+    }

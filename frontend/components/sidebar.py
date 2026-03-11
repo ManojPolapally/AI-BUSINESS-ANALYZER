@@ -16,10 +16,10 @@ def _init_session_defaults() -> None:
         "dataset_name": None,
         "dataset_rows": 0,
         "dataset_cols": 0,
-        "columns": [],             # list of column name strings
-        "schema": {},              # full schema dict {col: {dtype, ...}}
-        "history": [],             # list of result dicts
-        "pending_followup": None,  # pre-filled follow-up question
+        "columns": [],
+        "schema": {},
+        "history": [],
+        "pending_followup": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -42,6 +42,12 @@ def _render_upload_section() -> None:
         st.error("The uploaded file is empty.")
         return
 
+    # st.file_uploader returns the same file on every Streamlit rerun.
+    # Guard against re-uploading the same file (which would wipe history).
+    file_fingerprint = (uploaded.name, len(raw))
+    if st.session_state.get("_uploaded_file_fingerprint") == file_fingerprint:
+        return  # Already processed — skip to avoid clearing history
+
     with st.spinner(f"Uploading **{uploaded.name}**…"):
         try:
             result = upload_csv(raw, uploaded.name)
@@ -50,6 +56,7 @@ def _render_upload_section() -> None:
             return
 
     # Persist to session state
+    st.session_state._uploaded_file_fingerprint = file_fingerprint
     st.session_state.dataset_loaded = True
     st.session_state.dataset_name = result["filename"]
     st.session_state.dataset_rows = result["row_count"]
@@ -85,20 +92,25 @@ def _render_dataset_info() -> None:
         for col in cols:
             dtype = schema.get(col, {}).get("dtype", "")
             if any(t in dtype for t in ("int", "float")):
-                color = "#d4edda"   # green — numeric
+                bg = "#e0e7ff"; border = "#a5b4fc"; dot = "#6366f1"   # indigo — numeric
             elif "datetime" in dtype:
-                color = "#cce5ff"   # blue — datetime
+                bg = "#dbeafe"; border = "#93c5fd"; dot = "#3b82f6"   # blue — datetime
             else:
-                color = "#e2e3e5"   # grey — text/object
+                bg = "#f3f4f6"; border = "#d1d5db"; dot = "#6b7280"   # grey — text/object
             st.markdown(
                 f"""
                 <div style="
-                    display:flex; justify-content:space-between;
-                    background:{color}; border-radius:6px;
-                    padding:4px 10px; margin-bottom:4px; font-size:0.85rem;
-                ">
-                    <span>&#x2022; <strong>{col}</strong></span>
-                    <span style='color:#555; font-size:0.75rem;'>{dtype}</span>
+                    display:flex; justify-content:space-between; align-items:center;
+                    background:{bg}; border:1px solid {border}; border-radius:8px;
+                    padding:5px 10px; margin-bottom:5px; font-size:0.84rem;
+                    transition: box-shadow 0.18s ease, transform 0.18s ease;
+                    cursor:default;
+                "
+                onmouseover="this.style.boxShadow='0 3px 10px rgba(99,102,241,0.18)'; this.style.transform='translateX(3px)'"
+                onmouseout="this.style.boxShadow='none'; this.style.transform='translateX(0)'"
+                >
+                    <span><span style='color:{dot}; font-weight:700;'>&#x2022;</span> <strong>{col}</strong></span>
+                    <span style='color:#6b7280; font-size:0.73rem; background:rgba(255,255,255,0.6); padding:1px 6px; border-radius:10px;'>{dtype}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -125,16 +137,46 @@ def render_sidebar() -> None:
 
     st.markdown(
         """
-        <div style='text-align:center; padding:8px 0 12px 0;'>
-            <span style='font-size:2.2rem;'>📊</span>
-            <h2 style='margin:2px 0 0 0; color:#1f77b4;'>AI BI Analyser</h2>
-            <p style='margin:0; font-size:0.78rem; color:#888;'>
+        <div style='
+            text-align:center; padding:14px 0 16px 0;
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            border-radius: 14px; margin-bottom: 4px;
+            box-shadow: 0 4px 18px rgba(99,102,241,0.25);
+        '>
+            <span style='font-size:2.4rem;'>📊</span>
+            <h2 style='margin:4px 0 2px 0; color:#ffffff; font-size:1.25rem;'>AI BI Analyser</h2>
+            <p style='margin:0; font-size:0.76rem; color:rgba(255,255,255,0.78);'>
                 Conversational Dashboard Intelligence
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    st.divider()
+
+    # ---- AI Status badge -----------------------------------------------
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+            border: 1.5px solid #a5b4fc;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 4px;
+            font-size: 0.88rem;
+            transition: box-shadow 0.2s;
+        "
+        onmouseover="this.style.boxShadow='0 4px 14px rgba(99,102,241,0.2)'"
+        onmouseout="this.style.boxShadow='none'">
+            🤖 <strong style='color:#4f46e5;'>AI Powered</strong> — Gemini AI enabled<br/>
+            <span style="color:#6366f1; font-size:0.78rem;">
+                Intelligent analysis with automatic fallback
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.divider()
 
     _render_upload_section()

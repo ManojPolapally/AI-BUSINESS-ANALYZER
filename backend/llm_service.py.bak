@@ -1,14 +1,15 @@
-"""
+﻿"""
 llm_service.py
 --------------
-Gemini-powered LLM service for business intelligence queries.
+Wraps the Google Gemini API using the current google-genai SDK.
 
 Responsibilities:
 - Build the system prompt with strict anti-hallucination rules.
-- Inject the current dataset schema (compact, token-efficient).
+- Inject the current dataset schema into every call.
 - Force JSON-only output.
 - Parse and validate the structured response.
-- Retry on 429 / RESOURCE_EXHAUSTED (3 attempts, 20 s wait).
+- Provide helpers for SQL generation, chart config, insights,
+  and business recommendations so each LangGraph node stays thin.
 """
 
 import json
@@ -17,36 +18,46 @@ import re
 import time
 from typing import Any
 
-import requests as http_requests
 from google import genai
 from google.genai import types
 
-from backend.config import GEMINI_MODEL, GROQ_API_KEY as _GROQ_FALLBACK_KEY
+from backend.config import GEMINI_API_KEY, GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 3
-_RETRY_WAIT = 15
 
-_GEMINI_GEN_CONFIG = types.GenerateContentConfig(
+class QuotaExceededError(RuntimeError):
+    """Raised when the Gemini API quota is exhausted after all retries."""
+
+
+# ---------------------------------------------------------------------------
+# Client initialisation
+# ---------------------------------------------------------------------------
+
+if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    raise EnvironmentError(
+        "GEMINI_API_KEY is not set. "
+        "Open the .env file and replace 'your_gemini_api_key_here' "
+        "with your actual Gemini API key from https://aistudio.google.com/app/apikey"
+    )
+
+_client = genai.Client(api_key=GEMINI_API_KEY)
+
+_GENERATION_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
-    temperature=0.2,
+    temperature=0.2,       # low temperature â†’ deterministic, factual
     top_p=0.8,
     max_output_tokens=2048,
 )
 
-_GROQ_BASE = "https://api.groq.com/openai/v1/chat/completions"
-_GROQ_MODEL = "llama-3.3-70b-versatile"
-
-
-class QuotaExceededError(RuntimeError):
-    """All LLM providers failed (quota / unavailable)."""
-
+# ---------------------------------------------------------------------------
+# Prompt templates
+# ---------------------------------------------------------------------------
 
 _SYSTEM_RULES = """
 You are a precise business intelligence assistant.
 
-STRICT RULES - NEVER BREAK THESE:
+STRICT RULES â€” NEVER BREAK THESE:
 1. Use ONLY the columns that appear in the DATASET SCHEMA provided.
 2. Never invent, guess, or assume columns or table names.
 3. The SQLite table name is always: dataset
@@ -56,7 +67,7 @@ STRICT RULES - NEVER BREAK THESE:
 6. Never use DROP, INSERT, UPDATE, DELETE, ALTER, CREATE, or PRAGMA.
 7. Do not fabricate statistics, percentages, or numbers.
 8. All insights and recommendations must be derived ONLY from the query
-   results provided - never from prior knowledge.
+   results provided â€” never from prior knowledge.
 9. Your entire response MUST be a single valid JSON object. No markdown,
    no explanation text outside the JSON.
 """.strip()
@@ -110,10 +121,19 @@ Base EVERY item only on the query results above.
 """.strip()
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
 def _schema_to_string(schema: dict[str, Any]) -> str:
+    """Convert schema dict to a compact string for the prompt.
+    
+    Samples are capped at 10 values per column to avoid token bloat.
+    """
     lines = []
     for col, meta in schema.items():
-        raw_samples = meta.get("sample_values", [])[:5]
+        # Cap sample values to prevent large token counts
+        raw_samples = meta.get("sample_values", [])[:10]
         samples = ", ".join(str(s) for s in raw_samples)
         lines.append(
             f"  - {col} ({meta['dtype']}) | "
@@ -124,81 +144,76 @@ def _schema_to_string(schema: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _call_gemini(prompt: str, api_key: str) -> str:
-    if not api_key:
-        raise QuotaExceededError("GEMINI_API_KEY not configured.")
-    client = genai.Client(api_key=api_key)
+def _call_gemini(prompt: str, client: genai.Client | None = None) -> dict[str, Any]:
+    """
+    Send a prompt to Gemini and return the parsed JSON response.
+    Retries up to 3 times on 429 / RESOURCE_EXHAUSTED errors with 20 s waits.
+
+    Raises:
+        QuotaExceededError — all retries failed due to quota.
+        ValueError         — model returned invalid JSON or UNSUPPORTED_QUERY.
+        RuntimeError       — other Gemini API error.
+    """
+    active_client = client if client is not None else _client
+    _MAX_RETRIES = 3
+    _RETRY_WAIT  = 20   # seconds — within the 300 s frontend read timeout
+
+    response = None
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
-            response = client.models.generate_content(
+            response = active_client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=prompt,
-                config=_GEMINI_GEN_CONFIG,
+                config=_GENERATION_CONFIG,
             )
-            logger.info("LLM response received from Gemini.")
-            return response.text
+            break  # success
         except Exception as exc:
-            err = str(exc)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err:
+            err_str = str(exc)
+            is_quota = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+            if is_quota:
                 if attempt < _MAX_RETRIES:
                     logger.warning(
-                        "Gemini quota hit. Retrying in %ds (%d/%d)...",
+                        "Gemini API quota exceeded. Retrying in %ds (attempt %d/%d)...",
                         _RETRY_WAIT, attempt, _MAX_RETRIES,
                     )
-                    import time as _time
-                    _time.sleep(_RETRY_WAIT)
+                    time.sleep(_RETRY_WAIT)
                     continue
-                raise QuotaExceededError("Gemini quota exhausted.") from exc
-            raise QuotaExceededError(f"Gemini error: {exc}") from exc
-    raise QuotaExceededError("Gemini unreachable.")
+                # All retries exhausted
+                logger.error("Gemini API quota exceeded after %d attempts.", _MAX_RETRIES)
+                raise QuotaExceededError(
+                    "Gemini API quota temporarily exceeded. "
+                    "Please wait a moment and try again."
+                ) from exc
+            raise RuntimeError(f"Gemini API error: {exc}") from exc
 
+    raw_text = response.text.strip()
 
-def _call_groq(prompt: str) -> str:
-    """Silent server-side Groq fallback."""
-    if not _GROQ_FALLBACK_KEY:
-        raise QuotaExceededError("Groq fallback key not configured.")
-    headers = {
-        "Authorization": f"Bearer {_GROQ_FALLBACK_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": _GROQ_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 2048,
-        "response_format": {"type": "json_object"},
-    }
-    resp = http_requests.post(_GROQ_BASE, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
-    logger.info("LLM response received from Groq (fallback).")
-    return resp.json()["choices"][0]["message"]["content"]
-
-
-def _call_llm_with_fallback(prompt: str, gemini_key: str) -> str:
-    """Try Gemini first, silently fall back to Groq if quota exhausted."""
-    if gemini_key:
-        try:
-            return _call_gemini(prompt, gemini_key)
-        except QuotaExceededError as exc:
-            logger.warning("Gemini unavailable (%s), trying Groq fallback.", exc)
-    try:
-        return _call_groq(prompt)
-    except Exception as exc:
-        raise QuotaExceededError(f"All AI providers unavailable: {exc}") from exc
-
-
-def _parse_llm_response(raw_text: str) -> dict[str, Any]:
-    raw_text = raw_text.strip()
+    # Strip any accidental markdown fences the model might add
     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
     raw_text = re.sub(r"\s*```$", "", raw_text)
+
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as exc:
-        logger.error("LLM returned non-JSON: %s", raw_text[:300])
+        logger.error("Gemini returned non-JSON: %s", raw_text)
         raise ValueError(f"Model returned non-JSON output: {exc}") from exc
+
     if parsed.get("error") == "UNSUPPORTED_QUERY":
         raise ValueError("UNSUPPORTED_QUERY")
+
     return parsed
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def _get_client(api_key: str = "") -> genai.Client:
+    """Return a Gemini client using the provided key or the env-level default."""
+    key = api_key.strip() if api_key else None
+    if not key:
+        return _client   # fall back to module-level client
+    return genai.Client(api_key=key)
 
 
 def generate_sql_and_chart_config(
@@ -206,18 +221,27 @@ def generate_sql_and_chart_config(
     schema: dict[str, Any],
     api_key: str = "",
 ) -> dict[str, Any]:
+    """
+    Ask Gemini to translate a natural language question into:
+    - a SQLite SELECT query
+    - chart_type, x_axis, y_axis, title
+
+    Returns the parsed JSON dict.
+    Raises ValueError on UNSUPPORTED_QUERY or bad output.
+    """
     schema_str = _schema_to_string(schema)
     prompt = _SQL_CHART_TEMPLATE.format(
         system_rules=_SYSTEM_RULES,
         schema_str=schema_str,
         question=question,
     )
-    raw = _call_llm_with_fallback(prompt, api_key)
-    result = _parse_llm_response(raw)
+    result = _call_gemini(prompt, client=_get_client(api_key))
+
     required = {"sql_query", "chart_type", "x_axis", "y_axis", "title"}
     missing = required - set(result.keys())
     if missing:
         raise ValueError(f"Model response missing keys: {missing}")
+
     return result
 
 
@@ -227,19 +251,28 @@ def generate_insights_and_recommendations(
     query_results: list[dict[str, Any]],
     api_key: str = "",
 ) -> dict[str, Any]:
+    """
+    Ask Gemini to generate insights and business recommendations based on
+    actual query results.
+
+    Returns dict with 'insights' and 'business_recommendations' lists.
+    """
     schema_str = _schema_to_string(schema)
-    results_str = json.dumps(query_results[:50], indent=2, default=str)
+    results_preview = query_results[:50]
+    results_str = json.dumps(results_preview, indent=2, default=str)
+
     prompt = _INSIGHT_TEMPLATE.format(
         system_rules=_SYSTEM_RULES,
         schema_str=schema_str,
         question=question,
         results_str=results_str,
     )
-    raw = _call_llm_with_fallback(prompt, api_key)
-    result = _parse_llm_response(raw)
+    result = _call_gemini(prompt, client=_get_client(api_key))
+
     if "insights" not in result or "business_recommendations" not in result:
         raise ValueError(
             "Model response missing 'insights' or 'business_recommendations'."
         )
+
     return result
 

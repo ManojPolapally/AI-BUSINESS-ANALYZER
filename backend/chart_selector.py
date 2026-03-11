@@ -11,7 +11,10 @@ Responsibilities:
 - Handle edge cases (single column, no numeric data, etc.).
 """
 
+import base64
+import json
 import logging
+import struct
 from typing import Any
 
 import pandas as pd
@@ -19,6 +22,51 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Typed-array decoder
+# ---------------------------------------------------------------------------
+
+_DTYPE_MAP: dict[str, tuple[str, int]] = {
+    "i1": ("b", 1), "i2": ("<h", 2), "i4": ("<i", 4), "i8": ("<q", 8),
+    "u1": ("B", 1), "u2": ("<H", 2), "u4": ("<I", 4), "u8": ("<Q", 8),
+    "f4": ("<f", 4), "f8": ("<d", 8),
+}
+
+
+def _decode_typed_array(obj: dict) -> list:
+    """Decode a Plotly base64 typed array {'dtype':..., 'bdata':...} to a list."""
+    dtype = obj.get("dtype", "f8")
+    raw = base64.b64decode(obj.get("bdata", ""))
+    fmt, size = _DTYPE_MAP.get(dtype, ("<d", 8))
+    count = len(raw) // size
+    # struct fmt: e.g. "<iiii" for 4 little-endian int32
+    endian = fmt[0] if fmt[0] in ("<", ">") else ""
+    code = fmt.lstrip("<>") * count
+    return list(struct.unpack(endian + code, raw))
+
+
+def _resolve_typed_arrays(obj: Any) -> Any:
+    """
+    Recursively walk a Plotly figure dict and replace every
+    {"dtype": ..., "bdata": ...} node with a plain Python list.
+    """
+    if isinstance(obj, dict):
+        if "dtype" in obj and "bdata" in obj:
+            try:
+                return _decode_typed_array(obj)
+            except Exception:
+                return []
+        return {k: _resolve_typed_arrays(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_resolve_typed_arrays(item) for item in obj]
+    return obj
+
+
+def figure_to_dict(fig) -> dict:
+    """Serialise a Plotly figure to a plain-Python dict (no numpy, no base64)."""
+    return _resolve_typed_arrays(json.loads(fig.to_json()))
 
 # Mapping from LLM-provided chart type strings to internal keys
 _CHART_TYPE_ALIASES: dict[str, str] = {
@@ -188,7 +236,7 @@ def build_chart(
     # Handle table separately (no x/y needed)
     if ct_key == "table":
         fig = _build_table(df, title or "Query Results")
-        return fig.to_dict()
+        return figure_to_dict(fig)
 
     x, y = _infer_x_y(df, x_axis, y_axis)
 
@@ -198,7 +246,7 @@ def build_chart(
             ct_key,
         )
         fig = _build_table(df, title or "Query Results")
-        return fig.to_dict()
+        return figure_to_dict(fig)
 
     builder = _BUILDERS.get(ct_key, _build_bar)
 
@@ -208,4 +256,4 @@ def build_chart(
         logger.error("Chart builder '%s' failed: %s. Falling back to table.", ct_key, exc)
         fig = _build_table(df, title or "Query Results")
 
-    return fig.to_dict()
+    return figure_to_dict(fig)

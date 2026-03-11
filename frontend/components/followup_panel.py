@@ -99,8 +99,24 @@ def render_followup_suggestions() -> None:
         return
 
     st.divider()
-    st.markdown("#### 💬 Suggested Follow-up Questions")
-    st.caption("Click a suggestion to pre-fill the prompt input above.")
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(135deg, #eef2ff, #f5f3ff);
+            border-radius: 14px;
+            padding: 18px 20px 10px 20px;
+            border: 1.5px solid #e0e7ff;
+            margin-bottom: 8px;
+        ">
+            <span style='font-size:1rem; font-weight:700; color:#4338ca;'>
+                💬 Suggested Follow-up Questions
+            </span>
+            <p style='color:#6366f1; font-size:0.82rem; margin:4px 0 12px 0;'>
+                Click any suggestion to instantly pre-fill the prompt above.
+            </p>
+        """,
+        unsafe_allow_html=True,
+    )
 
     cols = st.columns(2)
     for idx, suggestion in enumerate(suggestions):
@@ -112,3 +128,5 @@ def render_followup_suggestions() -> None:
             ):
                 st.session_state.pending_followup = suggestion
                 st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)

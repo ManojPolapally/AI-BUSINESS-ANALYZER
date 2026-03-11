@@ -55,10 +55,13 @@ def render_prompt_input() -> None:
             value=prefill,
             placeholder=placeholder,
             label_visibility="collapsed",
-            key="prompt_input",
         )
     with col_btn:
         submitted = st.button("Analyse ▶", use_container_width=True, type="primary")
+
+    # Auto-submit when a follow-up suggestion was clicked (prefill was set)
+    if prefill and not submitted:
+        submitted = True
 
     if not submitted or not question.strip():
         return
@@ -91,6 +94,10 @@ def render_prompt_input() -> None:
         st.warning(
             "⚠️ **This question cannot be answered** with the available dataset.  \n"
             "Try a different question using the detected columns."
+        )
+    elif status == "quota_exceeded":
+        st.warning(
+            "⏳ **AI service temporarily busy** — showing fallback chart below."
         )
     else:
         error_msg = response.get("error", "An unknown error occurred.")
